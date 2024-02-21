@@ -8,10 +8,10 @@
 
 ### Corpora
 #### [NLTK Data](https://www.nltk.org/nltk_data/)
-- 65. Word Lists (id: words) is the UNIX words list
-- 74. Stopwords Corpus (id: stopwords) are a good list of stopwords
-- 93. The Reuters-21578 benchmark corpus (id: reuters) which is good for newspaper
-- 102. Brown Corpus (id: brown)
+- (65) Word Lists (id: words) is the UNIX words list
+- (74) Stopwords Corpus (id: stopwords) are a good list of stopwords
+- (93) The Reuters-21578 benchmark corpus (id: reuters) which is good for newspaper
+- (102) Brown Corpus (id: brown)
 
 #### [SCOWL](http://wordlist.aspell.net/)
 - en_US defaults
@@ -28,3 +28,9 @@
 
 #### In total
 - reuters + brown + words + scowl seems to catch most words that I want to remove
+
+### Directories
+- slp/
+    - My exploration of some NLP techniques from Speech and Language Processing (Jurafsky and Martin)
+- texts/
+    - Various resources that are useful for slp/ and main.py

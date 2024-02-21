@@ -1,32 +1,88 @@
 import nltk
-from nltk.corpus import brown
-from nltk.corpus import words
-from nltk.corpus import reuters
+from nltk.corpus import brown, words, reuters
 from nltk.probability import FreqDist
 from nltk.tokenize import WhitespaceTokenizer 
 import string
 import re
 import contractions
 import glob
+import matplotlib.pyplot as plt
 
-# Download the necessary resources
-nltk.download('brown')
-nltk.download('words')
-nltk.download('reuters')
+nonslang = set()
 
-def readFromFiles(files):
+def fetch_sorted(dir: str) -> list[str]:
+    """Fetch and sort filenames from a directory
+
+    Args:
+        dir (str): directory to fetch files from
+
+    Returns:
+        list[str]: list of sorted filenames
+    """
+    
+    files = glob.glob(dir)
+    files.sort()
+    return files
+
+def read_file(file: str) -> str:
+    """Read and concatenate the text from a file
+
+    Args:
+        file (str): the filename to read from
+
+    Returns:
+        str: the concatenated text from the file
+    """
     text = ""
-    for file in files:
-        with open(file, 'r') as file_text:
-            text += file_text.read()
+    with open(file, 'r') as file_text:
+        text += file_text.read()
     return text
 
-def cleanText(text):
+def read_bucketed(files: list[str], buckets: int = None) -> list[str]:
+    """Read timestamped files and bucket them
+
+    Args:
+        files (list[str]): list of filenames to read from
+        buckets (int): number of buckets to divide the files into
+    
+    Returns:
+        list[str]: list of size `buckets` containing the concatenated text of the files in each bucket
+    """
+    if buckets is None or buckets > len(files):
+        buckets = len(files)
+
+    first = re.findall("/(\d+).txt", files[0])[0]
+    last = re.findall("/(\d+).txt", files[-1])[0]
+
+    timerange = int(last) - int(first)
+    step = timerange / buckets
+
+    bucketed = [""] * buckets
+    for file in files:
+        filetime = re.findall("/(\d+).txt", file)[0]
+        deltatime = int(filetime) - int(first)
+
+        index = int(deltatime / step)
+        index = min(index, buckets - 1)
+
+        bucketed[index] += read_file(file)
+    
+    return bucketed
+
+def tokenize(text: str) -> list[str]:
+    """Normalize, tokenize, and lemmatize the text
+
+    Args:
+        text (str): the text to process
+
+    Returns:
+        list[str]: list of clean tokens
+    """
+
     # Remove emojis
     text = text.encode('ascii', 'ignore').decode('ascii')
 
-    # Remove punctuation except apostrophe
-    # text = text.translate(str.maketrans('', '', string.punctuation.replace("'", "")))
+    # Remove punctuation
     text = text.translate(str.maketrans('', '', string.punctuation))
 
     # Remove URLs
@@ -56,23 +112,26 @@ def cleanText(text):
 
     return tokens
 
-# Prepare SCOWL Corpus
-files = ['texts/corpora/scowl.txt']
-scowl = readFromFiles(files)
-scowl = scowl.split("\n")
+def slang_frequency(tokens: list[str]) -> FreqDist:
+    """Find slang and create a frequency distribution
 
-# Concatenate, lowcase, and set-ify the corpora for faster lookup
-vocab = set([word.lower() for word in reuters.words() + words.words() + brown.words() + scowl])
+    Args:
+        tokens (list[str]): list of tokens to process
 
-def frequencyOfSlang(files):
-    # Read the text from the files
-    text = readFromFiles(files)
+    Returns:
+        FreqDist: frequency distribution of the slang
+    """
+    global nonslang
+    if nonslang == set():
+        # Prepare SCOWL Corpus
+        scowl = read_file('texts/corpora/scowl.txt')
+        scowl = scowl.split("\n")
 
-    # Clean the text
-    tokens = cleanText(text)
+        # Concatenate, lowcase, and set-ify the corpora for faster lookup
+        nonslang = set([word.lower() for word in reuters.words() + words.words() + brown.words() + scowl])
 
-    # Remove English words
-    filtered_tokens = [token for token in tokens if token not in vocab]
+    # Filter out non-slang words
+    filtered_tokens = [token for token in tokens if token not in nonslang]
 
     # Create a frequency distribution of the words
     fd = FreqDist(filtered_tokens)
@@ -83,36 +142,24 @@ def frequencyOfSlang(files):
     
     return fd
 
-# if __name__ == "__main__":
-    # Read the text from the files
-    # files = ['texts/reddit/berkeley.txt', 'texts/reddit/UCDavis.txt', 'texts/reddit/UCI.txt', 'texts/reddit/ucla.txt', 'texts/reddit/UCSD.txt', 'texts/reddit/UCSantaBarbara.txt', 'texts/reddit/UCSC.txt', 'texts/reddit/UCMerced.txt', 'texts/reddit/UCR.txt']
-    # files = ['texts/shakespeare/hamlet.txt', 'texts/shakespeare/romeoandjuliet.txt', 'texts/shakespeare/macbeth.txt']
-    # files = ['texts/books/clockworkorange.txt', 'texts/books/cuckoosnest.txt', 'texts/books/maninhighcastle.txt', 'texts/books/wrinkleintime.txt']
-    # files = ['texts/clockworkorange/chapter1.txt']
-    # fd = frequencyOfSlang(files)
-    
-    # print(fd.tabulate(5))
-
 if __name__ == '__main__':
-    files = glob.glob("./texts/clockworkorange/*")
+    sources = fetch_sorted("./texts/clockworkorange/*")
+    raw = read_bucketed(sources)
 
-    # sort by name
-    files.sort()
+    clean = [tokenize(bucket) for bucket in raw]
+    frequency_series = [slang_frequency(bucket) for bucket in clean]
 
-    timeSeries = {}
-    for i in range(len(files)):
-        fd = frequencyOfSlang([files[i]])
-
-        for word in fd:
-            if word in timeSeries:
-                timeSeries[word].append(fd[word])
-            else:
-                timeSeries[word] = [0] * i + [fd[word]]
+    cumulative = FreqDist()
+    for bucket in frequency_series:
+        cumulative += bucket
+    
+    for word in cumulative.most_common(5):
+        series = []
+        for i in range(len(frequency_series)):
+            series.append(frequency_series[i][word[0]])
+            # print(f"{word[0]}: {frequency_series[i][word[0]]:.4f}", end=" ")
         
-        for word in timeSeries:
-            if word not in fd:
-                timeSeries[word].append(0)
-
-    fd = frequencyOfSlang(files)
-    for common in fd.most_common(10):
-        print(common[0], timeSeries[common[0]])
+        plt.plot(series, label=word[0])
+    
+    plt.legend(loc='best')
+    plt.show()
