@@ -65,7 +65,7 @@ def read_bucketed(files: list[str], buckets: int = None) -> list[str]:
         index = int(deltatime / step)
         index = min(index, buckets - 1)
 
-        bucketed[index] += read_file(file)
+        bucketed[index] += ' ' + read_file(file)
     
     return bucketed
 
@@ -82,11 +82,24 @@ def tokenize(text: str) -> list[str]:
     # Remove emojis
     text = text.encode('ascii', 'ignore').decode('ascii')
 
-    # Remove punctuation
-    text = text.translate(str.maketrans('', '', string.punctuation))
-
     # Remove URLs
     text = re.sub(r"http\S+|www\S+|https\S+", '', text, flags=re.MULTILINE)
+
+    # Remove r/ and u/ tags [Reddit-specific]
+    text = re.sub(r"r/\w+|u/\w+", '', text, flags=re.MULTILINE)
+
+    # Remove gifs of the form "![gif](something here)" [Reddit-specific]
+    text = re.sub(r"!\[gif\]\(.*\)", '', text, flags=re.MULTILINE)
+
+    # Cap repeated letters to 3
+    text = re.sub(r"([a-zA-Z])\1{3,}", r"\1\1\1", text, flags=re.MULTILINE)
+
+    # Remove hex character codes like "&amp;" and "#x200B;"
+    text = re.sub(r"&\w+;|#x\w+;", '', text, flags=re.MULTILINE)
+
+    # Remove punctuation
+    # text = text.translate(str.maketrans('', '', string.punctuation))
+    text = text.translate(str.maketrans(string.punctuation, ' '*len(string.punctuation)))
 
     # Normalize the text using Whitespace Tokenization (not Penn Treebank b/c contractions)
     tk = WhitespaceTokenizer()
@@ -142,18 +155,34 @@ def slang_frequency(tokens: list[str]) -> FreqDist:
     
     return fd
 
-if __name__ == '__main__':
+def test_slang():
+    """Test slang detection (just try some data and print results)
+    """
+    files = glob.glob("texts/reddit/top college/*.txt")
+    test_data = ' '.join(read_file(file) for file in files)
+    tokens = tokenize(test_data)
+    fd = slang_frequency(tokens)
+
+    print(fd.keys())
+    print(fd.tabulate(50))
+
+def main():
+    """Plots slang over time
+    """
     sources = fetch_sorted("./texts/clockworkorange/*")
-    raw = read_bucketed(sources)
+    # sources = fetch_sorted("./texts/reddit/uc-timestamped/*")
+    raw = read_bucketed(files=sources, buckets=5)
 
     clean = [tokenize(bucket) for bucket in raw]
     frequency_series = [slang_frequency(bucket) for bucket in clean]
 
-    cumulative = FreqDist()
-    for bucket in frequency_series:
-        cumulative += bucket
+    all_tokens = [token for sublist in clean for token in sublist]
+    cumulative = slang_frequency(all_tokens)
     
-    for word in cumulative.most_common(5):
+    # 7, otherwise 20
+    for word in cumulative.most_common(7):
+        # if word[0] in ["gtpd"]: continue
+        # if word[0] in ["gtpd", "uc", "usc", "ucsd", "uci", "reddit", "ucr", "ucb", "ccp", "ucsb", "subreddit", "upvote", "usac", "ucsc"]: continue
         series = []
         for i in range(len(frequency_series)):
             series.append(frequency_series[i][word[0]])
@@ -163,3 +192,6 @@ if __name__ == '__main__':
     
     plt.legend(loc='best')
     plt.show()
+
+if __name__ == '__main__':
+    main()
